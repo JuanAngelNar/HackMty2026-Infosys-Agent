@@ -1,6 +1,6 @@
 pandas
 networkx
 streamlit
-google-generativeai
+google-genai
 elevenlabs
 psycopg2-binary
