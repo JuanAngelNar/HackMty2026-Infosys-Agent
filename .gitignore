@@ -1,0 +1,110 @@
+# Byte-compiled / optimized Python files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Python build and packaging artifacts
+.Python
+build/
+dist/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+.venv/
+env/
+env.bak/
+venv.bak/
+ENV/
+.conda/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+*.env
+
+# Test, coverage, and type-checking artifacts
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.mypy_cache/
+.pyre/
+.pytype/
+.ruff_cache/
+
+# Jupyter artifacts
+.ipynb_checkpoints/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.iml
+*.suo
+*.user
+*.userossc
+*.sln.docstates
+
+# Operating system files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs and local runtime files
+*.log
+*.pid
+*.seed
+*.pid.lock
+
+# Local databases and generated exports
+*.sqlite
+*.sqlite3
+*.db
+*.bak
+*.tmp
+
+# Financial records and potentially large source data
+*.csv
+*.csv.gz
+*.tsv
+*.xlsx
+*.xls
+
+# Project-specific data directories
+/data/
+/data_ingestion/raw/
+/data_ingestion/processed/
+
+# Streamlit local configuration
+.streamlit/secrets.toml
+
+# OS and tooling caches
+.cache/
+.pytest_cache/
+
+# Secrets and private keys
+*.pem
+*.key
+*.p12
+*.pfx

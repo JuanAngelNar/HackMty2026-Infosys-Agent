@@ -1,0 +1,6 @@
+pandas
+networkx
+streamlit
+google-generativeai
+elevenlabs
+psycopg2-binary
