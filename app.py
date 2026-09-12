@@ -67,3 +67,19 @@ if uploaded_file is not None:
                         st.success("🎙️ Reporte de voz generado con éxito.")
                     except Exception as voice_error:
                         st.warning(f"No se pudo generar el audio: {voice_error}")
+
+                      #  GENERACIÓN DE PDF Y DESCARGA SEGURA
+                from reports.pdf_generator import generar_pdf_caso
+                pdf_path = generar_pdf_caso(reporte)
+                
+                # Leemos los bytes del PDF en memoria
+                with open(pdf_path, "rb") as pdf_file:
+                    pdf_bytes = pdf_file.read()
+                
+                # Mostramos el botón usando los bytes directos
+                st.download_button(
+                    label="📥 Descargar Expediente en PDF",
+                    data=pdf_bytes,
+                    file_name="expediente_forense.pdf",
+                    mime="application/pdf"
+                )
