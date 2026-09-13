@@ -225,8 +225,7 @@ if uploaded_file is not None:
                             client_eleven = ElevenLabs(api_key=eleven_api_key)
                             audio = client_eleven.text_to_speech.convert(
                                 voice_id="JBFqnCBsd6RMkjVDRZzb",
-                                text="Attention. A money laundering scheme involving circular transfers has been detected. Please review the attached file."
-",
+                                text="Attention. A money laundering scheme involving circular transfers has been detected. Please review the attached file.",
                                 model_id="eleven_multilingual_v2"
                             )
                             audio_bytes = b"".join(audio)
