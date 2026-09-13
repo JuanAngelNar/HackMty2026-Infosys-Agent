@@ -111,15 +111,21 @@ def agregar_evidencia(case, ev_type, fact, source, record_id, amount=0.0):
 # -----------------------------------------------------------------------------
 def tool_triage_anomalias(df, col_orig, col_dest, col_monto=None):
     """
-    Busca múltiples tipologías de lavado de dinero en el grafo transaccional.
+    Busca múltiples tipologías de lavado de dinero en el grafo de forma OPTIMIZADA.
     """
     G = nx.from_pandas_edgelist(df, source=col_orig, target=col_dest, create_using=nx.DiGraph())
     
-    # 1. Buscar Ciclos (Round-tripping)
-    ciclos = list(nx.simple_cycles(G))
-    ciclos_complejos = [c for c in ciclos if len(c) >= 3]
-    if ciclos_complejos:
-        circuito = ciclos_complejos[0]
+    # 1. Buscar Ciclos (Round-tripping) - VERSIÓN ULTRARRÁPIDA
+    circuito = None
+    # Usamos el generador directamente sin convertirlo a lista
+    generador_ciclos = nx.simple_cycles(G) 
+    
+    for c in generador_ciclos:
+        if len(c) >= 3:
+            circuito = c
+            break  # 🔥 ¡Freno de emergencia! Encontramos uno, detenemos la búsqueda
+            
+    if circuito:
         ruta_str = " -> ".join([str(n) for n in circuito]) + f" -> {circuito[0]}"
         monto = float(df[col_monto].head(len(circuito)).sum()) if col_monto in df.columns else 0.0
         return "SIGNAL_CIRCULAR_FLOW", f"Movimiento circular detectado: {ruta_str}", circuito, monto
@@ -129,7 +135,7 @@ def tool_triage_anomalias(df, col_orig, col_dest, col_monto=None):
     if in_degrees:
         nodo_embudo = max(in_degrees, key=in_degrees.get)
         max_in = in_degrees[nodo_embudo]
-        if max_in >= 5:  # Si una cuenta recibe de 5 o más orígenes distintos
+        if max_in >= 5:
             nodos_involucrados = [n for n, _ in G.in_edges(nodo_embudo)] + [nodo_embudo]
             monto = float(df[df[col_dest] == nodo_embudo][col_monto].sum()) if col_monto in df.columns else 0.0
             return "SIGNAL_FUNNEL", f"Concentración anómala: La entidad {nodo_embudo} recibió fondos de {max_in} orígenes distintos.", nodos_involucrados, monto
@@ -139,7 +145,7 @@ def tool_triage_anomalias(df, col_orig, col_dest, col_monto=None):
     if out_degrees:
         nodo_dispersor = max(out_degrees, key=out_degrees.get)
         max_out = out_degrees[nodo_dispersor]
-        if max_out >= 5: # Si una cuenta envía a 5 o más destinos distintos
+        if max_out >= 5:
             nodos_involucrados = [nodo_dispersor] + [n for _, n in G.out_edges(nodo_dispersor)]
             monto = float(df[df[col_orig] == nodo_dispersor][col_monto].sum()) if col_monto in df.columns else 0.0
             return "SIGNAL_DISPERSION", f"Dispersión atípica: La entidad {nodo_dispersor} fragmentó envíos hacia {max_out} destinos distintos.", nodos_involucrados, monto
