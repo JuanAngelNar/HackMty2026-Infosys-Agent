@@ -269,7 +269,7 @@ if uploaded_file is not None:
             components.html(html_source, height=415)
             
             # GENERACIÓN DE REPORTE CON IA
-            with st.spinner("Generando Expediente de Caso con Gemini AI..."):
+            with st.spinner("Generando Expediente de Caso con Anthropic..."):
                 reporte = generar_reporte_forense(ciclo_detectado)
                 st.session_state['reporte_generado'] = reporte
             
