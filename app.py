@@ -109,18 +109,42 @@ def agregar_evidencia(case, ev_type, fact, source, record_id, amount=0.0):
 # -----------------------------------------------------------------------------
 # HERRAMIENTAS PYTHON DETERMINISTAS
 # -----------------------------------------------------------------------------
-def tool_triage_ciclos(df, col_orig, col_dest, col_monto=None):
+def tool_triage_anomalias(df, col_orig, col_dest, col_monto=None):
+    """
+    Busca múltiples tipologías de lavado de dinero en el grafo transaccional.
+    """
     G = nx.from_pandas_edgelist(df, source=col_orig, target=col_dest, create_using=nx.DiGraph())
+    
+    # 1. Buscar Ciclos (Round-tripping)
     ciclos = list(nx.simple_cycles(G))
     ciclos_complejos = [c for c in ciclos if len(c) >= 3]
     if ciclos_complejos:
         circuito = ciclos_complejos[0]
         ruta_str = " -> ".join([str(n) for n in circuito]) + f" -> {circuito[0]}"
-        monto_estimado = 0.0
-        if col_monto and col_monto in df.columns:
-            monto_estimado = float(df[col_monto].head(len(circuito)).sum())
-        return ruta_str, circuito, monto_estimado
-    return None, None, 0.0
+        monto = float(df[col_monto].head(len(circuito)).sum()) if col_monto in df.columns else 0.0
+        return "SIGNAL_CIRCULAR_FLOW", f"Movimiento circular detectado: {ruta_str}", circuito, monto
+
+    # 2. Buscar Concentración (Embudo / Cuenta Concentradora)
+    in_degrees = dict(G.in_degree())
+    if in_degrees:
+        nodo_embudo = max(in_degrees, key=in_degrees.get)
+        max_in = in_degrees[nodo_embudo]
+        if max_in >= 5:  # Si una cuenta recibe de 5 o más orígenes distintos
+            nodos_involucrados = [n for n, _ in G.in_edges(nodo_embudo)] + [nodo_embudo]
+            monto = float(df[df[col_dest] == nodo_embudo][col_monto].sum()) if col_monto in df.columns else 0.0
+            return "SIGNAL_FUNNEL", f"Concentración anómala: La entidad {nodo_embudo} recibió fondos de {max_in} orígenes distintos.", nodos_involucrados, monto
+            
+    # 3. Buscar Dispersión (Estructuración / Cuentas de Paso)
+    out_degrees = dict(G.out_degree())
+    if out_degrees:
+        nodo_dispersor = max(out_degrees, key=out_degrees.get)
+        max_out = out_degrees[nodo_dispersor]
+        if max_out >= 5: # Si una cuenta envía a 5 o más destinos distintos
+            nodos_involucrados = [nodo_dispersor] + [n for _, n in G.out_edges(nodo_dispersor)]
+            monto = float(df[df[col_orig] == nodo_dispersor][col_monto].sum()) if col_monto in df.columns else 0.0
+            return "SIGNAL_DISPERSION", f"Dispersión atípica: La entidad {nodo_dispersor} fragmentó envíos hacia {max_out} destinos distintos.", nodos_involucrados, monto
+
+    return None, None, [], 0.0
 
 def tool_consultar_sat_69b(entidades, watchlist_adicional=None):
     base_69b = {"ID-F5CA38F7": "DEFINITIVO", "ID-9400F1B2": "PRESUNTO"}
@@ -254,33 +278,36 @@ if uploaded_file is not None:
     st.markdown("---")
     
     # Botón maestro de inicio o reanudación
+    # Botón maestro de inicio o reanudación
     if case["status"] == "TRIAGE":
         st.info("ℹ️ Datos cargados. La investigación se iniciará a partir de señales objetivas, sin conclusiones apresuradas.")
         if st.button("🚀 Iniciar Investigación Forense", type="primary"):
-            # Paso 1: Triage objetivo
-            circuito_str, circuito_nodos, monto_est = tool_triage_ciclos(df, "_orig_anon", "_dest_anon", col_monto)
-            if circuito_str:
+            
+            # Paso 1: Triage objetivo generalizado (Ciclos, Embudos, Dispersión)
+            tipo_senal, desc_senal, nodos_involucrados, monto_est = tool_triage_anomalias(df, "_orig_anon", "_dest_anon", col_monto)
+            
+            if tipo_senal:
                 ev_id = agregar_evidencia(
                     case, 
-                    "SIGNAL_CIRCULAR_FLOW", 
-                    f"Movimiento circular identificado entre entidades: {circuito_str}", 
+                    tipo_senal, 
+                    desc_senal, 
                     uploaded_file.name, 
                     "TOPOLOGY_CHECK", 
                     monto_est
                 )
                 case["hypotheses"].append({
                     "id": "H-001",
-                    "statement": f"Posible esquema de flujo circular de fondos (round-tripping) involucrando {len(circuito_nodos)} entidades.",
+                    "statement": f"Posible esquema de lavado de dinero ({tipo_senal}) involucrando {len(nodos_involucrados)} entidades.",
                     "status": "ACTIVE",
                     "supporting_evidence": [ev_id],
                     "contradicting_evidence": []
                 })
-                case["circuit_nodes"] = circuito_nodos
-                case["circuit_str"] = circuito_str
+                # Reusamos 'circuit_nodes' para pintar el grafo
+                case["circuit_nodes"] = nodos_involucrados[:15] # Limitamos a 15 para que el grafo no se sature visualmente
                 case["status"] = "INVESTIGATING"
                 st.rerun()
             else:
-                st.success("✅ No se detectaron anomalías topológicas de flujo circular en el conjunto analizado.")
+                st.success("✅ No se detectaron anomalías topológicas severas (ciclos, embudos o dispersiones masivas) en el conjunto analizado.")
                 case["disposition"] = "DISMISSED"
                 
     elif case["status"] == "INVESTIGATING":
