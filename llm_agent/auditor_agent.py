@@ -73,9 +73,9 @@ def revision_critica(estado_caso_str):
     return _llamar_openai_json(prompt)
 
 def generar_reporte_forense(estado_caso_str, exposicion_mxn):
-    """Se queda en Gemini (1.5-flash) para redactar el dictamen largo."""
-    api_key = os.getenv("GEMINI_API_KEY")
-    client = genai.Client(api_key=api_key)
+    """Genera el dictamen final usando OpenAI para máxima estabilidad en la demo."""
+    api_key = os.getenv("OPENAI_API_KEY")
+    client = openai.OpenAI(api_key=api_key)
     
     prompt = f"""
     Actúa como un Sistema Experto Forense en AML.
@@ -92,16 +92,20 @@ def generar_reporte_forense(estado_caso_str, exposicion_mxn):
     
     Mantén un tono objetivo y analítico. Formato Markdown. NO acuses de delitos legales.
     """
-    response = client.models.generate_content(model='gemini-3.6-flash', contents=prompt)
-    return response.text
+    
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return response.choices[0].message.content
 
 def responder_pregunta_juez(estado_caso_str, pregunta):
-    """Se queda en Gemini (1.5-flash) para manejar el chat final."""
-    api_key = os.getenv("GEMINI_API_KEY")
-    client = genai.Client(api_key=api_key)
+    """Responde al juez usando OpenAI basado SÓLO en los hechos confirmados del caso."""
+    api_key = os.getenv("OPENAI_API_KEY")
+    client = openai.OpenAI(api_key=api_key)
     
     prompt = f"""
-    Eres The Forensic Auditor, un agente IA desarrollado para el HackMTY 2026.
+    Eres The Forensic Auditor, un agente IA.
     Responde la pregunta del juez usando SOLO los hechos de este caso:
     {estado_caso_str}
     
@@ -113,5 +117,9 @@ def responder_pregunta_juez(estado_caso_str, pregunta):
     - Si no tienes la evidencia para responder, di: "La investigación actual no contiene evidencia suficiente para responder eso."
     - NO inventes datos.
     """
-    response = client.models.generate_content(model='gemini-1.5-flash', contents=prompt)
-    return response.text
+    
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return response.choices[0].message.content
