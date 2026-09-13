@@ -6,3 +6,4 @@ elevenlabs
 reportlab
 pyvis
 openai
+python-dotenv
