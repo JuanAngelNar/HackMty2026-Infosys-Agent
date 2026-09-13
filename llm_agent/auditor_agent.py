@@ -1,38 +1,30 @@
 import os
 import json
 from google import genai
+import openai
 
-def _llamar_gemini_json(prompt, max_retries=2):
-    """Función helper para llamar a Gemini y asegurar que devuelva JSON válido."""
-    api_key = os.getenv("GEMINI_API_KEY")
+def _llamar_openai_json(prompt, max_retries=2):
+    """Llama a OpenAI (gpt-4o-mini) forzando una respuesta nativa en JSON para evitar errores."""
+    api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        return {"error": "No se encontró GEMINI_API_KEY"}
+        return {"error": "No se encontró OPENAI_API_KEY en el entorno"}
     
-    client = genai.Client(api_key=api_key)
+    client = openai.OpenAI(api_key=api_key)
     
     for intento in range(max_retries):
         try:
-            response = client.models.generate_content(
-                model='gemini-3.6-flash',
-                contents=prompt
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                response_format={"type": "json_object"}, # 🔥 Modo estricto JSON de OpenAI
+                messages=[{"role": "user", "content": prompt}]
             )
-            
-            # Limpiamos el texto por si Gemini le pone formato markdown de código (```json ... ```)
-            texto_limpio = response.text.strip()
-            if texto_limpio.startswith("```json"):
-                texto_limpio = texto_limpio[7:-3].strip()
-            elif texto_limpio.startswith("```"):
-                texto_limpio = texto_limpio[3:-3].strip()
-                
-            return json.loads(texto_limpio)
+            return json.loads(response.choices[0].message.content)
         except Exception as e:
             if intento == max_retries - 1:
-                return {"error": f"Fallo al procesar JSON con Gemini: {str(e)}"}
+                return {"error": f"Fallo al procesar JSON con OpenAI: {str(e)}"}
 
 def determinar_siguiente_accion(estado_caso_str, acciones_disponibles_str):
-    """
-    Decide la Siguiente Mejor Acción Investigativa (NBIA) basada en la evidencia actual.
-    """
+    """Delegado a ChatGPT (gpt-4o-mini) para ahorrar tokens y ganar velocidad."""
     prompt = f"""
     Eres un Investigador Financiero Forense IA.
     Tu responsabilidad NO es probar un fraude, sino determinar la acción investigativa 
@@ -47,7 +39,7 @@ def determinar_siguiente_accion(estado_caso_str, acciones_disponibles_str):
     Elige exactamente UNA acción de la lista de disponibles.
     NO inventes evidencia, IDs, ni transacciones. Usa solo los datos proporcionados.
     
-    Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
+    Debes responder ÚNICAMENTE en formato JSON con esta estructura exacta:
     {{
       "selected_action_id": "ID de la accion elegida",
       "question": "¿Qué pregunta crítica responde esta acción?",
@@ -56,12 +48,10 @@ def determinar_siguiente_accion(estado_caso_str, acciones_disponibles_str):
       "weakens_if": "¿Qué resultado debilitaría la hipótesis o probaría legitimidad?"
     }}
     """
-    return _llamar_gemini_json(prompt)
+    return _llamar_openai_json(prompt)
 
 def revision_critica(estado_caso_str):
-    """
-    Actúa como un Auditor Adversario intentando probar que el sistema se equivoca.
-    """
+    """Delegado a ChatGPT (gpt-4o-mini) para balancear la carga."""
     prompt = f"""
     Eres un Revisor de Auditoría Forense Adversario.
     Tu objetivo es encontrar la debilidad en la hipótesis de fraude actual e identificar 
@@ -72,20 +62,18 @@ def revision_critica(estado_caso_str):
     
     NO inventes hechos. Usa solo la evidencia listada.
     
-    Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
+    Debes responder ÚNICAMENTE en formato JSON con esta estructura exacta:
     {{
       "weakest_inference": "La inferencia o suposición más débil en la hipótesis actual",
       "alternative_explanation": "La mejor explicación comercial legítima (ej. subcontratación válida)",
       "missing_evidence": ["Evidencia 1 que falta", "Evidencia 2 que falta"],
-      "critical_objection": true o false (booleano)
+      "critical_objection": true
     }}
     """
-    return _llamar_gemini_json(prompt)
+    return _llamar_openai_json(prompt)
 
 def generar_reporte_forense(estado_caso_str, exposicion_mxn):
-    """
-    Genera el dictamen final objetivo.
-    """
+    """Se queda en Gemini (1.5-flash) para redactar el dictamen largo."""
     api_key = os.getenv("GEMINI_API_KEY")
     client = genai.Client(api_key=api_key)
     
@@ -104,13 +92,11 @@ def generar_reporte_forense(estado_caso_str, exposicion_mxn):
     
     Mantén un tono objetivo y analítico. Formato Markdown. NO acuses de delitos legales.
     """
-    response = client.models.generate_content(model='gemini-3.6-flash', contents=prompt)
+    response = client.models.generate_content(model='gemini-1.5-flash', contents=prompt)
     return response.text
 
 def responder_pregunta_juez(estado_caso_str, pregunta):
-    """
-    Responde al juez basándose SÓLO en los hechos confirmados del caso.
-    """
+    """Se queda en Gemini (1.5-flash) para manejar el chat final."""
     api_key = os.getenv("GEMINI_API_KEY")
     client = genai.Client(api_key=api_key)
     
@@ -127,5 +113,5 @@ def responder_pregunta_juez(estado_caso_str, pregunta):
     - Si no tienes la evidencia para responder, di: "La investigación actual no contiene evidencia suficiente para responder eso."
     - NO inventes datos.
     """
-    response = client.models.generate_content(model='gemini-3.6-flash', contents=prompt)
+    response = client.models.generate_content(model='gemini-1.5-flash', contents=prompt)
     return response.text

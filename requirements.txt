@@ -5,3 +5,4 @@ google-genai
 elevenlabs
 reportlab
 pyvis
+openai
