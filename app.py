@@ -54,7 +54,7 @@ def investigador_claude(ciclo_detectado):
         prompt = f"Actúa como un Investigador Forense implacable. Analiza este esquema matemático de transferencias detectado: {ciclo_detectado}. Redacta una acusación formal y contundente explicando por qué es un claro esquema de lavado de dinero (máximo 2 párrafos)."
         
         message = client.messages.create(
-            model="claude-3-5-sonnet-20240620",
+            model="claude-3-sonnet-20240229",
             max_tokens=400,
             messages=[{"role": "user", "content": prompt}]
         )
