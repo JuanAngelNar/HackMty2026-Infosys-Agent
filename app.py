@@ -272,6 +272,7 @@ if uploaded_file is not None:
             with st.spinner("Generando Expediente de Caso con Anthropic..."):
                 reporte = generar_reporte_forense(ciclo_detectado)
                 st.session_state['reporte_generado'] = reporte
+                st.session_state['ciclo_detectado'] = ciclo_detectado
             
             if reporte:
                 st.markdown("### 📄 Dictamen Oficial de Auditoría")
@@ -312,34 +313,36 @@ if uploaded_file is not None:
                     file_name="expediente_forense.pdf",
                     mime="application/pdf"
                 )
-
-                st.markdown("---")
-                st.markdown("### ⚖️ Tribunal de IAs (Debate Multi-Agente)")
-                st.caption("Orquestación Multi-LLM en vivo: Claude vs ChatGPT vs Gemini")
-                
-                if st.button("Convocar Tribunal de Auditoría", icon="🏛️"):
-                    with st.spinner("Investigador Claude (3-Haiku) armando el caso..."):
-                        acusacion_claude = investigador_claude(ciclo_detectado)
-                        
-                    with st.spinner("Abogado ChatGPT (gpt-4o-mini) preparando la defensa..."):
-                        defensa_gpt = abogado_defensor_chatgpt(acusacion_claude)
-                        
-                    with st.spinner("Juez Gemini evaluando el veredicto final..."):
-                        veredicto_gemini = juez_supremo_gemini(acusacion_claude, defensa_gpt)
-                        
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.info(f"🔵 **Investigador (Claude 3):**\n\n{acusacion_claude}")
-                    with col2:
-                        st.warning(f"🔴 **Defensor Corporativo (ChatGPT):**\n\n{defensa_gpt}")
-                        
-                    st.success(f"🟢 **Juez Supremo (Gemini Flash):**\n\n{veredicto_gemini}")
         else:
             st.success("✅ Auditoría completada: No se detectaron esquemas de lavado de dinero circular en esta base de datos.")
 
 
 # MÓDULO DE INTERROGATORIO (PREGUNTA SORPRESA)
 if 'reporte_generado' in st.session_state:
+    st.markdown("---")
+    st.markdown("### ⚖️ Tribunal de IAs (Debate Multi-Agente)")
+    st.caption("Orquestación Multi-LLM en vivo: Claude vs ChatGPT vs Gemini")
+    
+    if st.button("Convocar Tribunal de Auditoría", icon="🏛️"):
+        # Usamos el ciclo que guardamos en memoria en el Paso 1
+        ciclo_memoria = st.session_state['ciclo_detectado'] 
+        
+        with st.spinner("Investigador Claude (3-Haiku) armando el caso..."):
+            acusacion_claude = investigador_claude(ciclo_memoria)
+            
+        with st.spinner("Abogado ChatGPT (gpt-4o-mini) preparando la defensa..."):
+            defensa_gpt = abogado_defensor_chatgpt(acusacion_claude)
+            
+        with st.spinner("Juez Gemini evaluando el veredicto final..."):
+            veredicto_gemini = juez_supremo_gemini(acusacion_claude, defensa_gpt)
+            
+        col1, col2 = st.columns(2)
+        with col1:
+            st.info(f"🔵 **Investigador (Claude 3):**\n\n{acusacion_claude}")
+        with col2:
+            st.warning(f"🔴 **Defensor Corporativo (ChatGPT):**\n\n{defensa_gpt}")
+            
+        st.success(f"🟢 **Juez Supremo (Gemini Flash):**\n\n{veredicto_gemini}")
     st.markdown("---")
     st.markdown("### ⚖️ Interrogatorio del Juez")
     st.caption("Hazle una pregunta sorpresa al agente sobre su razonamiento o las pistas descartadas.")
