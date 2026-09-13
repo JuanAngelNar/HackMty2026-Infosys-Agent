@@ -54,7 +54,7 @@ def investigador_claude(ciclo_detectado):
         prompt = f"Actúa como un Investigador Forense implacable. Analiza este esquema matemático de transferencias detectado: {ciclo_detectado}. Redacta una acusación formal y contundente explicando por qué es un claro esquema de lavado de dinero (máximo 2 párrafos)."
         
         message = client.messages.create(
-            model="claude-3-haiku-20240307",
+            model="claude-3-5-sonnet-20240620",
             max_tokens=400,
             messages=[{"role": "user", "content": prompt}]
         )
@@ -325,7 +325,7 @@ if 'reporte_generado' in st.session_state:
     
     if st.button("Convocar Tribunal de Auditoría", icon="🏛️"):
         # Usamos el ciclo que guardamos en memoria en el Paso 1
-        ciclo_memoria = st.session_state['ciclo_detectado'] 
+        ciclo_memoria = st.session_state.get('ciclo_detectado', None)
         
         with st.spinner("Investigador Claude (3-Haiku) armando el caso..."):
             acusacion_claude = investigador_claude(ciclo_memoria)
