@@ -453,6 +453,33 @@ if uploaded_file is not None:
         st.markdown("### 📄 Dictamen Oficial de Auditoría")
         st.info(dictamen)
 
+        # MÓDULO DE VOZ ELEVENLABS
+        if st.button("🔊 Escuchar Veredicto (ElevenLabs)"):
+            with st.spinner("Sintetizando voz de The Forensic Auditor..."):
+                try:
+                    eleven_api_key = os.getenv("ELEVENLABS_API_KEY") 
+                    if not eleven_api_key:
+                        st.warning("⚠️ Falta la API Key de ElevenLabs en el entorno.")
+                    else:
+                        from elevenlabs.client import ElevenLabs
+                        client_eleven = ElevenLabs(api_key=eleven_api_key)
+                        
+                        # Hacemos que el texto sea dinámico según el veredicto
+                        texto_voz = f"Atención. La investigación forense ha concluido. El estado final es: {disp}."
+                        if disp == "SUPPORTED":
+                            texto_voz += " Se ha confirmado la trazabilidad de los fondos y el esquema de riesgo. Por favor, revise el expediente oficial."
+                        elif disp == "HUMAN_REVIEW_REQUIRED":
+                            texto_voz += " Se requiere revisión humana para verificar la documentación operativa faltante."
+                        
+                        audio = client_eleven.text_to_speech.convert(
+                            voice_id="JBFqnCBsd6RMkjVDRZzb", # La voz que ya tenías
+                            text=texto_voz,
+                            model_id="eleven_multilingual_v2" # Soporta español perfecto
+                        )
+                        st.audio(b"".join(audio), format="audio/mp3", autoplay=True)
+                except Exception as voice_error:
+                    st.error(f"Error al generar audio: {voice_error}")
+
         # Descarga de PDF
         from reports.pdf_generator import generar_pdf_caso
         pdf_path = generar_pdf_caso(dictamen)
