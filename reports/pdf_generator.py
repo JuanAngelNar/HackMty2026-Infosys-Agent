@@ -35,8 +35,10 @@ def generar_pdf_caso(texto_reporte, filename="expediente_forense.pdf"):
     )
     
     # Encabezado formal
-    story.append(Paragraph("UNIDAD DE INTELIGENCIA FINANCIERA - FORENSIC AUDIT DIVISION", title_style))
-    story.append(Paragraph("<b>REPORTE OFICIAL DE CASO: ESQUEMA CIRCULAR (ROUND-TRIPPING)</b>", body_style))
+    # Encabezado formal
+    story.append(Paragraph("THE FORENSIC AUDITOR - AUDIT CASE FILE", title_style))
+    story.append(Paragraph("<b>REPORTE TÉCNICO DE INVESTIGACIÓN FINANCIERA</b>", body_style))
+    story.append(Paragraph("<i>Infosys Challenge — HackMTY 2026</i>", body_style))
     story.append(Spacer(1, 10))
     
     # Línea divisoria

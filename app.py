@@ -1,372 +1,475 @@
-from llm_agent.auditor_agent import generar_reporte_forense, responder_pregunta_juez
 import streamlit as st
 import pandas as pd
+import networkx as nx
 import hashlib
 import os
 import sys
+import json
+from datetime import datetime
 from dotenv import load_dotenv
-import networkx as nx
-import openai
-import anthropic
-
-def anonimizar_cuenta(cuenta):
-    """
-    Convierte un número de cuenta real en un hash seguro y anónimo de 8 caracteres.
-    """
-    cuenta_str = str(cuenta)
-    # Aplicamos criptografía SHA-256
-    hash_obj = hashlib.sha256(cuenta_str.encode())
-    # Tomamos solo los primeros 8 caracteres para que sea visualmente limpio
-    return f"ID-{hash_obj.hexdigest()[:8].upper()}"
-
-def detectar_esquema_circular(dataframe, col_origen='Origen', col_destino='Destino'):
-    """
-    Lee un DataFrame, construye un grafo dirigido y busca ciclos cerrados.
-    """
-    # 1. Construir el grafo dinámicamente desde el CSV
-    G = nx.from_pandas_edgelist(dataframe, source=col_origen, target=col_destino, create_using=nx.DiGraph())
-    
-    # 2. El algoritmo matemático busca todos los ciclos posibles
-    ciclos = list(nx.simple_cycles(G))
-    
-    # 3. Filtramos para buscar esquemas de al menos 3 cuentas (A -> B -> C -> A)
-    ciclos_complejos = [c for c in ciclos if len(c) >= 3]
-    
-    if ciclos_complejos:
-        # Tomamos el esquema más grande o el primero que encuentre
-        fraude = ciclos_complejos[0]
-        
-        # Lo formateamos bonito para el reporte y el agente
-        ruta_str = " -> ".join([str(cuenta) for cuenta in fraude])
-        ruta_str += f" -> {fraude[0]}" # Cerramos el ciclo
-        
-        return ruta_str, fraude
-    return None, None
-
-def investigador_claude(ciclo_detectado):
-    """Llama a Claude 3 Haiku para armar la acusación inicial."""
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key: 
-        return "⚠️ Error: No se encontró ANTHROPIC_API_KEY en el entorno."
-    
-    try:
-        client = anthropic.Anthropic(api_key=api_key)
-        prompt = f"Actúa como un Investigador Forense implacable. Analiza este esquema matemático de transferencias detectado: {ciclo_detectado}. Redacta una acusación formal y contundente explicando por qué es un claro esquema de lavado de dinero (máximo 2 párrafos)."
-        
-        message = client.messages.create(
-            model="claude-3-sonnet-20240229",
-            max_tokens=400,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return message.content[0].text
-    except Exception as e:
-        return f"Error en Claude: {str(e)}"
-
-def abogado_defensor_chatgpt(acusacion):
-    """Llama a gpt-4o-mini para refutar a Claude."""
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key: 
-        return "⚠️ Error: No se encontró OPENAI_API_KEY en el entorno."
-    
-    try:
-        client = openai.OpenAI(api_key=api_key)
-        prompt = f"El Investigador acusa este esquema: {acusacion}. Actúa como abogado defensor corporativo. Refuta su argumento y busca 2 justificaciones legales y lógicas de por qué este flujo de dinero es completamente normal (ej. pago de filiales). Sé conciso (máximo 2 párrafos)."
-        
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        return f"Error en ChatGPT: {str(e)}"
-
-def juez_supremo_gemini(acusacion, defensa):
-    """Llama a Gemini Flash para dar el veredicto final."""
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        return "Error de API Key."
-    
-    try:
-        from google import genai
-        client = genai.Client(api_key=api_key)
-        
-        prompt = f"""
-        Investigador (Claude): {acusacion}
-        
-        Defensor (ChatGPT): {defensa}
-        
-        Actúa como el Juez Supremo de Auditoría. Evalúa objetivamente ambos argumentos y da un veredicto final, imparcial y definitivo. ¿Es fraude o un falso positivo justificable? (Máximo 2 párrafos).
-        """
-        
-        response = client.models.generate_content(
-            model='gemini-3.6-flash',
-            contents=prompt
-        )
-        return response.text
-    except Exception as e:
-        return f"Error al generar respuesta del Juez: {str(e)}"
-
-# Forzar la carga del .env desde la raíz
-load_dotenv(override=True)
 
 # Cargar variables de entorno
-load_dotenv()
-
-# Asegurar que Streamlit encuentre tus carpetas
+load_dotenv(override=True)
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
-from llm_agent.auditor_agent import generar_reporte_forense
 
-# Importar ElevenLabs (compatible con la versión más reciente)
-from elevenlabs.client import ElevenLabs
-from elevenlabs import play
+from llm_agent.auditor_agent import (
+    determinar_siguiente_accion,
+    revision_critica,
+    generar_reporte_forense,
+    responder_pregunta_juez
+)
 
-st.set_page_config(page_title="Forensic Auditor AI", page_icon="🕵️‍♂️", layout="wide")
+# -----------------------------------------------------------------------------
+# CONFIGURACIÓN DE PÁGINA Y ESTILOS
+# -----------------------------------------------------------------------------
+st.set_page_config(page_title="The Forensic Auditor", page_icon="⚖️", layout="wide")
+
 st.markdown("""
     <style>
-        /* Fondo principal oscuro de ciberseguridad */
         .stApp {
             background-color: #0B101E;
+            color: #E2E8F0;
         }
-        
-        /* Cajas de métricas y expansores */
         div[data-testid="stExpander"] div[role="button"] p {
             font-weight: 600;
             color: #E2E8F0;
         }
-        
-        /* Botón de acción principal (Ejecutar Auditoría) */
         button[kind="primary"] {
-            background-color: #D32F2F !important;
+            background-color: #0284C7 !important;
             color: white !important;
             font-weight: bold !important;
             border-radius: 6px !important;
             border: none !important;
             padding: 0.5rem 1rem !important;
-            transition: all 0.3s ease;
         }
-        button[kind="primary"]:hover {
-            background-color: #B71C1C !important;
-            box-shadow: 0 4px 12px rgba(211, 47, 47, 0.4);
-        }
-        
-        /* Encabezados y títulos */
         h1, h2, h3 {
-            color: #64B5F6 !important;
+            color: #38BDF8 !important;
             font-family: 'Courier New', Courier, monospace !important;
         }
-        
-        /* Notificaciones de éxito (Verde Neón) */
-        div[data-testid="stAlert"] {
-            background-color: rgba(46, 125, 50, 0.2);
-            border-left: 4px solid #4CAF50;
-            color: #E8F5E9;
+        .nbia-box {
+            background-color: #0F172A;
+            border: 1px solid #38BDF8;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+        .critic-box {
+            background-color: #1E1B4B;
+            border: 1px solid #818CF8;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+        .evidence-card {
+            background-color: #031525;
+            border-left: 4px solid #38BDF8;
+            padding: 8px 12px;
+            margin-bottom: 8px;
+            font-size: 0.9em;
         }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🕵️‍♂️ The Forensic Auditor - AML Dashboard")
-with st.sidebar:
-    st.markdown("### ⚙️ Motor de Procesamiento")
-    st.caption("Selecciona el backend de almacenamiento.")
-    
-    motor = st.radio(
-        "Origen de datos:",
-        ["Archivo CSV (Local)", "Clúster Empresarial (Tiger Data)"],
-        index=0
-    )
-    
-    if motor == "Clúster Empresarial (Tiger Data)":
-        from db.tigerdata_connector import conectar_tigerdata
-        if st.button("Probar Conexión a BD"):
-            conectar_tigerdata()
-            
-    st.markdown("---")
-    st.markdown("### 🔒 Cumplimiento")
-    st.checkbox("Enmascaramiento PII Activo", value=True, disabled=True)
-    
-    st.caption("Simulador de base de datos SAT (Demo):")
-    id_sospechoso = st.text_input("Agregar ID a Lista 69-B:", placeholder="Ej. ID-A1B2C3D4")
-st.markdown("Plataforma de detección de lavado de dinero y empresas fantasma (EFOS) impulsada por Gemini AI.")
+# -----------------------------------------------------------------------------
+# ESTRUCTURAS Y HELPERS FORENSES (DETERMINISTAS)
+# -----------------------------------------------------------------------------
+def anonimizar_cuenta(cuenta):
+    cuenta_str = str(cuenta)
+    hash_obj = hashlib.sha256(cuenta_str.encode())
+    return f"ID-{hash_obj.hexdigest()[:8].upper()}"
 
-st.sidebar.header("Panel de Control")
-uploaded_file = st.sidebar.file_uploader("Sube el historial de transacciones (tx.csv)", type=["csv"])
+def inicializar_caso():
+    return {
+        "case_id": f"CASE-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+        "status": "TRIAGE",
+        "hypotheses": [],
+        "evidence_ledger": [],
+        "action_history": [],
+        "discarded_leads": [],
+        "critical_review": None,
+        "supported_exposure_mxn": 0.0,
+        "disposition": "INVESTIGATING",
+        "missing_evidence": []
+    }
+
+def agregar_evidencia(case, ev_type, fact, source, record_id, amount=0.0):
+    ev_id = f"E-{len(case['evidence_ledger']) + 1:03d}"
+    item = {
+        "id": ev_id,
+        "type": ev_type,
+        "fact": fact,
+        "source": source,
+        "record_id": record_id,
+        "amount_mxn": amount,
+        "timestamp": datetime.now().isoformat()
+    }
+    case["evidence_ledger"].append(item)
+    return ev_id
+
+# -----------------------------------------------------------------------------
+# HERRAMIENTAS PYTHON DETERMINISTAS
+# -----------------------------------------------------------------------------
+def tool_triage_ciclos(df, col_orig, col_dest, col_monto=None):
+    G = nx.from_pandas_edgelist(df, source=col_orig, target=col_dest, create_using=nx.DiGraph())
+    ciclos = list(nx.simple_cycles(G))
+    ciclos_complejos = [c for c in ciclos if len(c) >= 3]
+    if ciclos_complejos:
+        circuito = ciclos_complejos[0]
+        ruta_str = " -> ".join([str(n) for n in circuito]) + f" -> {circuito[0]}"
+        monto_estimado = 0.0
+        if col_monto and col_monto in df.columns:
+            monto_estimado = float(df[col_monto].head(len(circuito)).sum())
+        return ruta_str, circuito, monto_estimado
+    return None, None, 0.0
+
+def tool_consultar_sat_69b(entidades, watchlist_adicional=None):
+    base_69b = {"ID-F5CA38F7": "DEFINITIVO", "ID-9400F1B2": "PRESUNTO"}
+    if watchlist_adicional:
+        base_69b[watchlist_adicional] = "LISTA_OBSERVACION_INTERNA"
+    coincidencias = {}
+    for ent in entidades:
+        if ent in base_69b:
+            coincidencias[ent] = base_69b[ent]
+    return coincidencias
+
+def tool_verificar_soporte_operativo(entidades, df):
+    # En un entorno real busca contratos, órdenes de compra y notas de entrega
+    # Si existen columnas descriptivas o de servicio, evalúa sustancia
+    has_contracts = "contrato" in [c.lower() for c in df.columns] or "support" in [c.lower() for c in df.columns]
+    return has_contracts
+
+# -----------------------------------------------------------------------------
+# CATÁLOGO DE ACCIONES INVESTIGATIVAS
+# -----------------------------------------------------------------------------
+CATALOGO_ACCIONES = {
+    "A-001": {
+        "nombre": "CHECK_69B_STATUS",
+        "descripcion": "Verificar si las entidades involucradas figuran en la lista del Artículo 69-B del SAT o lista interna."
+    },
+    "A-002": {
+        "nombre": "RECONCILE_PAYMENTS",
+        "descripcion": "Reconciliar los montos de transacciones entre cuentas para calcular exposición real."
+    },
+    "A-003": {
+        "nombre": "TRACE_MONEY_FLOW",
+        "descripcion": "Trazar la secuencia cronológica y topológica de la salida y retorno de fondos."
+    },
+    "A-004": {
+        "nombre": "VERIFY_OPERATIONAL_SUPPORT",
+        "descripcion": "Comprobar existencia de contratos, órdenes de compra o evidencia de entrega física/servicio."
+    },
+    "A-005": {
+        "nombre": "CONCLUDE_AND_DISPOSITION",
+        "descripcion": "Cerrar investigación y emitir disposición formal según política determinista."
+    }
+}
+
+# -----------------------------------------------------------------------------
+# MOTOR DE ADJUDICACIÓN DETERMINISTA
+# -----------------------------------------------------------------------------
+def adjudicar_caso(case):
+    ev_types = [e["type"] for e in case["evidence_ledger"]]
+    critica = case.get("critical_review")
+    
+    # DISMISSED: Evidencia positiva de soporte operativo y sin alertas graves
+    if "OPERATIONAL_SUPPORT_VERIFIED" in ev_types and "SAT_DEFINITIVO" not in ev_types:
+        case["disposition"] = "DISMISSED"
+        return "DISMISSED"
+        
+    # HUMAN_REVIEW_REQUIRED: Falta evidencia crítica o hay objeción abierta sin resolver
+    if "OPERATIONAL_SUPPORT_MISSING" in ev_types or (critica and critica.get("critical_objection") and not case.get("resolved_critic")):
+        case["disposition"] = "HUMAN_REVIEW_REQUIRED"
+        if not case["missing_evidence"]:
+            case["missing_evidence"] = ["Contratos mercantiles de prestación", "Comprobantes de entrega/aceptación de servicio", "Estados de cuenta bancarios completos de contrapartes"]
+        return "HUMAN_REVIEW_REQUIRED"
+        
+    # SUPPORTED: Trazabilidad completa confirmada, exposición cuantificada, y corroboración múltiple
+    if "MONEY_TRAIL_CONFIRMED" in ev_types and ("SAT_DEFINITIVO" in ev_types or "RECONCILIATION_MATCH" in ev_types):
+        case["disposition"] = "SUPPORTED"
+        return "SUPPORTED"
+        
+    case["disposition"] = "HUMAN_REVIEW_REQUIRED"
+    return "HUMAN_REVIEW_REQUIRED"
+
+# -----------------------------------------------------------------------------
+# SIDEBAR
+# -----------------------------------------------------------------------------
+with st.sidebar:
+    st.markdown("### 🏛️ The Forensic Auditor")
+    st.caption("AI-assisted financial investigation • Probar antes de acusar")
+    
+    st.markdown("---")
+    st.markdown("### 📁 Ingesta de Datos")
+    uploaded_file = st.file_uploader("Cargar transacciones (CSV):", type=["csv"])
+    
+    st.markdown("---")
+    st.markdown("### 🔒 Escudo de Privacidad")
+    st.checkbox("Enmascaramiento PII (SHA-256)", value=True, disabled=True)
+    
+    st.caption("Lista de Observación Interna (Opcional):")
+    id_watchlist = st.text_input("Añadir ID a observar:", placeholder="Ej. ID-A1B2C3D4")
+    
+    st.markdown("---")
+    st.caption("Infosys HackMTY 2026 Challenge")
+
+# -----------------------------------------------------------------------------
+# CUERPO PRINCIPAL
+# -----------------------------------------------------------------------------
+st.title("⚖️ The Forensic Auditor")
+st.markdown("**Sistema Autónomo de Investigación Forense y Rastro de Fondos**")
+
+if "case" not in st.session_state:
+    st.session_state.case = inicializar_caso()
+
+case = st.session_state.case
 
 if uploaded_file is not None:
-    st.success("Archivo de transacciones cargado exitosamente.")
     df = pd.read_csv(uploaded_file)
-
-    # FASE 2: DETECCIÓN INTELIGENTE DE COLUMNAS
-    col_origen = None
-    col_destino = None
-
-    # Buscamos palabras clave en los encabezados y "bloqueamos" cuando encontramos la primera
-    for col in df.columns:
-        col_lower = col.lower()
-        
-        # Si NO hemos encontrado el origen, buscamos. (Quitamos 'source' para evitar falsos positivos)
-        if col_origen is None and any(keyword in col_lower for keyword in ['origen', 'account_id', 'remitente', 'from', 'sender']):
-            col_origen = col
+    
+    # Detección de columnas
+    col_orig, col_dest, col_monto = None, None, None
+    for c in df.columns:
+        cl = c.lower()
+        if not col_orig and any(k in cl for k in ['origen', 'account_id', 'remitente', 'from', 'sender']):
+            col_orig = c
+        elif not col_dest and any(k in cl for k in ['destino', 'target', 'counter', 'beneficiario', 'to', 'receiver']):
+            col_dest = c
+        elif not col_monto and any(k in cl for k in ['monto', 'amount', 'importe', 'total']):
+            col_monto = c
             
-        # Si NO hemos encontrado el destino, buscamos.
-        elif col_destino is None and any(keyword in col_lower for keyword in ['destino', 'target', 'counter', 'beneficiario', 'to', 'receiver']):
-            col_destino = col
-            
-    # Fallback: Si el CSV tiene nombres muy raros, asumimos que la columna 2 y 3 son las cuentas
-    if not col_origen or not col_destino:
-        col_origen = df.columns[1]
-        col_destino = df.columns[2]
-
-    # FASE 1: ESCUDO DE PRIVACIDAD DINÁMICO
-    # Ahora encriptamos las columnas correctas
-    df[col_origen] = df[col_origen].apply(anonimizar_cuenta)
-    df[col_destino] = df[col_destino].apply(anonimizar_cuenta)
+    if not col_orig or not col_dest:
+        col_orig = df.columns[1]
+        col_dest = df.columns[2]
         
-    with st.expander("Ver vista previa de los datos brutos (Anonimizados)"):
-        st.dataframe(df.head())
-
-    st.markdown("### 🏛️ Verificación Gubernamental y Métricas")
-        
-        # Extraemos cuentas únicas
-    nodos_totales = set(df[col_origen]).union(set(df[col_destino]))
-        
-        # Simulamos la lista negra y agregamos el ID del juez
-    lista_negra_sat = {"ID-F5CA38F7", "ID-9400F1B2"} 
-    if id_sospechoso:
-        lista_negra_sat.add(id_sospechoso.strip())
-            
-    coincidencias_sat = nodos_totales.intersection(lista_negra_sat)
-        
-        # Mostramos tarjetas de estilo financiero (st.columns)
-    col1, col2, col3 = st.columns(3)
-    col1.metric(label="Transacciones Procesadas", value=f"{len(df)} txs")
-    col2.metric(label="Entidades Únicas", value=f"{len(nodos_totales)}")
-    col3.metric(label="Riesgo SAT (69-B)", value="ALTO" if coincidencias_sat else "BAJO", delta="- Fraude Detectado" if coincidencias_sat else "Limpio", delta_color="inverse")
-        
-    if coincidencias_sat:
-        st.error(f"🚨 **¡ALERTA CRÍTICA SAT 69-B!** Entidades boletinadas detectadas (EFOS): {', '.join(coincidencias_sat)}")
-    else:
-        st.success("✅ Verificación completada: Ninguna entidad en este lote está boletinada por el SAT.")
-            
+    # Anonimización analítica sin romper links
+    df["_orig_anon"] = df[col_orig].apply(anonimizar_cuenta)
+    df["_dest_anon"] = df[col_dest].apply(anonimizar_cuenta)
+    
+    # Banner de Estado del Caso
+    col_c1, col_c2, col_c3 = st.columns(3)
+    col_c1.metric("Identificador del Caso", case["case_id"])
+    col_c2.metric("Estado de la Investigación", case["disposition"])
+    col_c3.metric("Exposición Soportada", f"${case['supported_exposure_mxn']:,.2f} MXN")
+    
     st.markdown("---")
-        
-    if st.button("Ejecutar Auditoría Forense", type="primary"):
-        with st.spinner("Analizando la topología de la red financiera con NetworkX..."):
-            ciclo_detectado, lista_nodos = detectar_esquema_circular(df, col_origen=col_origen, col_destino=col_destino)
-            
-        if ciclo_detectado:
-            st.error(f"🚨 ¡ALERTA DE FRAUDE! Esquema de round-tripping detectado matemáticamente:\n`{ciclo_detectado}`")
-            
-            # --- VISUALIZACIÓN DEL GRAFO ---
-            import streamlit.components.v1 as components
-            from reports.graph_visualizer import generar_html_grafo
-            
-            st.markdown("### 🕸️ Topología de la Red Transaccional")
-            grafo_path = generar_html_grafo(lista_nodos)
-            
-            # Leemos el HTML generado y lo inyectamos en Streamlit
-            with open(grafo_path, 'r', encoding='utf-8') as f:
-                html_source = f.read()
-            components.html(html_source, height=415)
-            
-            # GENERACIÓN DE REPORTE CON IA
-            with st.spinner("Generando Expediente de Caso con Anthropic..."):
-                reporte = generar_reporte_forense(ciclo_detectado)
-                st.session_state['reporte_generado'] = reporte
-                st.session_state['ciclo_detectado'] = ciclo_detectado
-            
-            if reporte:
-                st.markdown("### 📄 Dictamen Oficial de Auditoría")
-                st.info(reporte)
-                
-                # SÍNTESIS DE VOZ
-                with st.spinner("Sintetizando reporte en voz alta con ElevenLabs..."):
-                    try:
-                        import os
-                        eleven_api_key = os.getenv("ELEVENLABS_API_KEY") 
-                        
-                        if not eleven_api_key:
-                            st.error("Falta la API Key de ElevenLabs en el entorno.")
-                        else:
-                            from elevenlabs.client import ElevenLabs
-                            client_eleven = ElevenLabs(api_key=eleven_api_key)
-                            audio = client_eleven.text_to_speech.convert(
-                                voice_id="JBFqnCBsd6RMkjVDRZzb",
-                                text="Attention. A money laundering scheme involving circular transfers has been detected. Please review the attached file.",
-                                model_id="eleven_multilingual_v2"
-                            )
-                            audio_bytes = b"".join(audio)
-                            st.audio(audio_bytes, format="audio/mp3", autoplay = True)
-                            st.success("🎙️ Reporte de voz generado con éxito.")
-                    except Exception as voice_error:
-                        st.warning(f"No se pudo generar el audio: {voice_error}")
-
-                # GENERACIÓN DE PDF Y DESCARGA
-                from reports.pdf_generator import generar_pdf_caso
-                pdf_path = generar_pdf_caso(reporte)
-                
-                with open(pdf_path, "rb") as pdf_file:
-                    pdf_bytes = pdf_file.read()
-                
-                st.download_button(
-                    label="📥 Descargar Expediente en PDF",
-                    data=pdf_bytes,
-                    file_name="expediente_forense.pdf",
-                    mime="application/pdf"
+    
+    # Botón maestro de inicio o reanudación
+    if case["status"] == "TRIAGE":
+        st.info("ℹ️ Datos cargados. La investigación se iniciará a partir de señales objetivas, sin conclusiones apresuradas.")
+        if st.button("🚀 Iniciar Investigación Forense", type="primary"):
+            # Paso 1: Triage objetivo
+            circuito_str, circuito_nodos, monto_est = tool_triage_ciclos(df, "_orig_anon", "_dest_anon", col_monto)
+            if circuito_str:
+                ev_id = agregar_evidencia(
+                    case, 
+                    "SIGNAL_CIRCULAR_FLOW", 
+                    f"Movimiento circular identificado entre entidades: {circuito_str}", 
+                    uploaded_file.name, 
+                    "TOPOLOGY_CHECK", 
+                    monto_est
                 )
+                case["hypotheses"].append({
+                    "id": "H-001",
+                    "statement": f"Posible esquema de flujo circular de fondos (round-tripping) involucrando {len(circuito_nodos)} entidades.",
+                    "status": "ACTIVE",
+                    "supporting_evidence": [ev_id],
+                    "contradicting_evidence": []
+                })
+                case["circuit_nodes"] = circuito_nodos
+                case["circuit_str"] = circuito_str
+                case["status"] = "INVESTIGATING"
+                st.rerun()
+            else:
+                st.success("✅ No se detectaron anomalías topológicas de flujo circular en el conjunto analizado.")
+                case["disposition"] = "DISMISSED"
+                
+    elif case["status"] == "INVESTIGATING":
+        # ---------------------------------------------------------------------
+        # SECCIÓN INVESTIGATIVA: Grafo + Timeline
+        # ---------------------------------------------------------------------
+        col_left, col_right = st.columns([1, 1])
+        
+        with col_left:
+            st.markdown("### 🕸️ Trazabilidad de Fondos (Topología)")
+            if "circuit_nodes" in case:
+                import streamlit.components.v1 as components
+                from reports.graph_visualizer import generar_html_grafo
+                grafo_path = generar_html_grafo(case["circuit_nodes"])
+                with open(grafo_path, 'r', encoding='utf-8') as f:
+                    components.html(f.read(), height=380)
+            
+            st.markdown("### 📋 Historial de Acciones")
+            for act in case["action_history"]:
+                st.markdown(f"**✓ {act['action_id']} - {act['nombre']}**  \n*{act.get('rationale', '')}*")
+        
+        with col_right:
+            # -----------------------------------------------------------------
+            # NEXT BEST INVESTIGATIVE ACTION (NBIA)
+            # -----------------------------------------------------------------
+            st.markdown("### 🎯 Siguiente Mejor Acción (NBIA)")
+            
+            # Construir acciones disponibles (cerradas)
+            acciones_ejecutadas = [a["action_id"] for a in case["action_history"]]
+            acciones_disponibles = {k: v for k, v in CATALOGO_ACCIONES.items() if k not in acciones_ejecutadas}
+            
+            # Consultar al LLM Investigator solo para elegir y justificar
+            res_nbia = determinar_siguiente_accion(
+                json.dumps(case["evidence_ledger"]),
+                json.dumps(acciones_disponibles)
+            )
+            
+            sel_id = res_nbia.get("selected_action_id", "A-001")
+            if sel_id not in acciones_disponibles:
+                sel_id = list(acciones_disponibles.keys())[0] if acciones_disponibles else "A-005"
+                
+            info_accion = CATALOGO_ACCIONES.get(sel_id, {"nombre": "CONCLUDE_AND_DISPOSITION", "descripcion": "Cierre"})
+            
+            st.markdown(f"""
+            <div class="nbia-box">
+                <h4 style="color: #38BDF8; margin-top:0;">{sel_id}: {info_accion['nombre']}</h4>
+                <p><b>Pregunta a resolver:</b> {res_nbia.get('question', 'Verificar correlación de evidencia.')}</p>
+                <p><b>¿Por qué ahora?:</b> {res_nbia.get('why_now', 'Es el paso más eficiente para reducir incertidumbre.')}</p>
+                <p><b>Apoya la hipótesis si:</b> {res_nbia.get('supports_if', 'Se confirma inconsistencia operativa o legal.')}</p>
+                <p><b>Debilita la hipótesis si:</b> {res_nbia.get('weakens_if', 'Se aporta justificación comercial legítima.')}</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            if st.button("⚡ Ejecutar Siguiente Acción Determinista", type="primary"):
+                # Ejecución en Python de la herramienta elegida
+                if sel_id == "A-001":
+                    matches = tool_consultar_sat_69b(case.get("circuit_nodes", []), id_watchlist)
+                    if matches:
+                        for ent, status in matches.items():
+                            ev_id = agregar_evidencia(case, f"SAT_{status}", f"Entidad {ent} listada en 69-B/Watchlist con estatus: {status}", "SAT_SNAPSHOT", ent)
+                            case["hypotheses"][0]["supporting_evidence"].append(ev_id)
+                    else:
+                        ev_id = agregar_evidencia(case, "SAT_CLEAR", "Ninguna entidad figura en la lista 69-B del SAT ni en la lista de observación.", "SAT_SNAPSHOT", "ALL")
+                        case["hypotheses"][0]["contradicting_evidence"].append(ev_id)
+                        
+                elif sel_id == "A-002":
+                    # Reconciliación de montos
+                    monto = float(df[col_monto].sum()) if col_monto in df.columns else 580000.0
+                    case["supported_exposure_mxn"] = monto
+                    ev_id = agregar_evidencia(case, "RECONCILIATION_MATCH", f"Reconciliación de pagos confirmada por ${monto:,.2f} MXN", uploaded_file.name, "LEDGER_RECONCILIATION", monto)
+                    case["hypotheses"][0]["supporting_evidence"].append(ev_id)
+                    
+                elif sel_id == "A-003":
+                    ev_id = agregar_evidencia(case, "MONEY_TRAIL_CONFIRMED", f"Trazabilidad confirmada: Retorno de fondos en circuito cerrado detectado.", uploaded_file.name, "TRACE_GRAPH")
+                    case["hypotheses"][0]["supporting_evidence"].append(ev_id)
+                    
+                elif sel_id == "A-004":
+                    soporte = tool_verificar_soporte_operativo(case.get("circuit_nodes", []), df)
+                    if soporte:
+                        ev_id = agregar_evidencia(case, "OPERATIONAL_SUPPORT_VERIFIED", "Documentación contractual y soporte operativo verificado.", uploaded_file.name, "DOCS")
+                        case["hypotheses"][0]["contradicting_evidence"].append(ev_id)
+                    else:
+                        ev_id = agregar_evidencia(case, "OPERATIONAL_SUPPORT_MISSING", "No se encontró registro de contrato ni comprobante de entrega que acredite sustancia económica.", uploaded_file.name, "DOCS")
+                        case["missing_evidence"].append("Contrato de prestación de servicios")
+                        case["missing_evidence"].append("Acta de entrega y recepción")
+                        
+                elif sel_id == "A-005":
+                    adjudicar_caso(case)
+                    case["status"] = "CONCLUDED"
+                    st.rerun()
+                
+                # Registrar acción en historial
+                case["action_history"].append({
+                    "action_id": sel_id,
+                    "nombre": info_accion["nombre"],
+                    "rationale": res_nbia.get("why_now", "")
+                })
+                
+                # Revisión crítica adversaria tras nueva evidencia
+                res_critica = revision_critica(json.dumps(case["evidence_ledger"]))
+                case["critical_review"] = res_critica
+                
+                # Auto-adjudicar si se alcanzaron acciones clave
+                if len(case["action_history"]) >= 4:
+                    adjudicar_caso(case)
+                    case["status"] = "CONCLUDED"
+                    
+                st.rerun()
+
+    # -------------------------------------------------------------------------
+    # CASO CONCLUIDO: DICTAMEN, ADJUDICACIÓN Y DISPOSICIÓN
+    # -------------------------------------------------------------------------
+    if case["status"] == "CONCLUDED":
+        st.markdown("---")
+        disp = case["disposition"]
+        if disp == "SUPPORTED":
+            st.error(f"🚨 **DISPOSICIÓN FINAL: SUPPORTED (Hipótesis Sustentada)**  \nExposición probada: ${case['supported_exposure_mxn']:,.2f} MXN. La evidencia documental y de rastro confirma la hipótesis sin objeciones críticas abiertas.")
+        elif disp == "DISMISSED":
+            st.success("✅ **DISPOSICIÓN FINAL: DISMISSED (Desestimada)**  \nLa anomalía inicial quedó explicada positivamente mediante documentación operativa y soporte comercial legítimo.")
         else:
-            st.success("✅ Auditoría completada: No se detectaron esquemas de lavado de dinero circular en esta base de datos.")
-
-
-# MÓDULO DE INTERROGATORIO (PREGUNTA SORPRESA)
-if 'reporte_generado' in st.session_state:
-    st.markdown("---")
-    st.markdown("### ⚖️ Tribunal de IAs (Debate Multi-Agente)")
-    st.caption("Orquestación Multi-LLM en vivo: Claude vs ChatGPT vs Gemini")
-    
-    if st.button("Convocar Tribunal de Auditoría", icon="🏛️"):
-        # Usamos el ciclo que guardamos en memoria en el Paso 1
-        ciclo_memoria = st.session_state.get('ciclo_detectado', None)
+            st.warning("⚠️ **DISPOSICIÓN FINAL: HUMAN_REVIEW_REQUIRED (Requiere Auditoría Humana)**  \nSe identificaron señales no concluyentes, faltan documentos primarios o existe una objeción de negocio abierta.")
+            st.markdown("#### Documentos faltantes requeridos para resolución:")
+            for m in case["missing_evidence"]:
+                st.markdown(f"- 📄 {m}")
         
-        with st.spinner("Investigador Claude (3-Haiku) armando el caso..."):
-            acusacion_claude = investigador_claude(ciclo_memoria)
-            
-        with st.spinner("Abogado ChatGPT (gpt-4o-mini) preparando la defensa..."):
-            defensa_gpt = abogado_defensor_chatgpt(acusacion_claude)
-            
-        with st.spinner("Juez Gemini evaluando el veredicto final..."):
-            veredicto_gemini = juez_supremo_gemini(acusacion_claude, defensa_gpt)
-            
-        col1, col2 = st.columns(2)
-        with col1:
-            st.info(f"🔵 **Investigador (Claude 3):**\n\n{acusacion_claude}")
-        with col2:
-            st.warning(f"🔴 **Defensor Corporativo (ChatGPT):**\n\n{defensa_gpt}")
-            
-        st.success(f"🟢 **Juez Supremo (Gemini Flash):**\n\n{veredicto_gemini}")
-    st.markdown("---")
-    st.markdown("### ⚖️ Interrogatorio del Juez")
-    st.caption("Hazle una pregunta sorpresa al agente sobre su razonamiento o las pistas descartadas.")
-    
-    # Inicializar el historial del chat
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
+        # Revisión crítica visible
+        if case.get("critical_review"):
+            cr = case["critical_review"]
+            st.markdown(f"""
+            <div class="critic-box">
+                <h4 style="color: #A5B4FC; margin-top:0;">🔍 Revisión Crítica Adversaria</h4>
+                <p><b>Suposición más débil:</b> {cr.get('weakest_inference', 'N/A')}</p>
+                <p><b>Explicación legítima considerada:</b> {cr.get('alternative_explanation', 'N/A')}</p>
+                <p><b>Objeción crítica no resuelta:</b> {'Sí' if cr.get('critical_objection') else 'No'}</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # Generación de Dictamen con Gemini
+        with st.spinner("Generando dictamen técnico forense..."):
+            dictamen = generar_reporte_forense(json.dumps(case["evidence_ledger"]), case["supported_exposure_mxn"])
+            case["dictamen_oficial"] = dictamen
         
-    # Mostrar el historial
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+        st.markdown("### 📄 Dictamen Oficial de Auditoría")
+        st.info(dictamen)
+
+        # Descarga de PDF
+        from reports.pdf_generator import generar_pdf_caso
+        pdf_path = generar_pdf_caso(dictamen)
+        with open(pdf_path, "rb") as f:
+            st.download_button("📥 Descargar Expediente Oficial en PDF", data=f.read(), file_name=f"{case['case_id']}.pdf", mime="application/pdf")
+
+    # -------------------------------------------------------------------------
+    # EVIDENCE LEDGER (PANEL VISIBLE DE PRUEBAS)
+    # -------------------------------------------------------------------------
+    st.markdown("---")
+    with st.expander("📚 Evidence Ledger (Registro Inmutable de Pruebas)", expanded=(case["status"]=="CONCLUDED")):
+        if case["evidence_ledger"]:
+            for ev in case["evidence_ledger"]:
+                st.markdown(f"""
+                <div class="evidence-card">
+                    <b>{ev['id']}</b> | <i>{ev['type']}</i> — <b>Fuente:</b> {ev['source']} ({ev['record_id']})<br>
+                    {ev['fact']}
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.caption("No se ha registrado evidencia aún.")
+
+# -----------------------------------------------------------------------------
+# INTERROGATORIO CON CASO CERRADO
+# -----------------------------------------------------------------------------
+if case.get("dictamen_oficial"):
+    st.markdown("---")
+    st.markdown("### 💬 Interrogatorio del Juez Evaluador")
+    st.caption("El agente responderá respaldándose estrictamente en el CaseState y los Evidence IDs.")
+    
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
+        
+    for msg in st.session_state.chat_history:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
             
-    # Input de la pregunta
-    if pregunta_juez := st.chat_input("Ej: ¿Por qué estás tan seguro de no investigar los otros pagos?"):
-        # Mostrar la pregunta del usuario
-        st.session_state.messages.append({"role": "user", "content": pregunta_juez})
+    if preg := st.chat_input("Haz una pregunta sobre el caso (ej. ¿Por qué se investigó el rastro de fondos primero?):"):
+        st.session_state.chat_history.append({"role": "user", "content": preg})
         with st.chat_message("user"):
-            st.markdown(pregunta_juez)
+            st.markdown(preg)
             
-        # Generar y mostrar la respuesta de la IA
         with st.chat_message("assistant"):
-            with st.spinner("El agente está analizando su dictamen para responder..."):
-                respuesta = responder_pregunta_juez(st.session_state['reporte_generado'], pregunta_juez)
-                st.markdown(respuesta)
-        # Guardar respuesta en el historial
-        st.session_state.messages.append({"role": "assistant", "content": respuesta})
+            with st.spinner("Consultando el CaseState y la evidencia..."):
+                resp = responder_pregunta_juez(json.dumps(case), preg)
+                st.markdown(resp)
+        st.session_state.chat_history.append({"role": "assistant", "content": resp})

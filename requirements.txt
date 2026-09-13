@@ -1,11 +1,7 @@
 streamlit
 pandas
 networkx
-google-generativeai
+google-genai
 elevenlabs
-python-dotenv
-psycopg2-binary
-pyvis
 reportlab
-openai
-anthropic
+pyvis

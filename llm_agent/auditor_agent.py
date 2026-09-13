@@ -1,74 +1,131 @@
 import os
+import json
 from google import genai
 
-def generar_reporte_forense(ciclo_detectado):
-    """
-    Se comunica con Gemini para redactar el dictamen forense basado en el grafo detectado.
-    """
+def _llamar_gemini_json(prompt, max_retries=2):
+    """Función helper para llamar a Gemini y asegurar que devuelva JSON válido."""
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
-        return "⚠️ Error: No se encontró la GEMINI_API_KEY en el entorno."
+        return {"error": "No se encontró GEMINI_API_KEY"}
     
-    try:
-        client = genai.Client(api_key=api_key)
-        
-        prompt = f"""
-        Actúa como un Sistema Experto Forense en Prevención de Lavado de Dinero (AML).
-        A través de un análisis topológico de grafos, nuestra arquitectura ha detectado matemáticamente 
-        el siguiente esquema de transferencias circulares (round-tripping):
-        {ciclo_detectado}
+    client = genai.Client(api_key=api_key)
+    
+    for intento in range(max_retries):
+        try:
+            response = client.models.generate_content(
+                model='gemini-3.6-flash',
+                contents=prompt
+            )
+            
+            # Limpiamos el texto por si Gemini le pone formato markdown de código (```json ... ```)
+            texto_limpio = response.text.strip()
+            if texto_limpio.startswith("```json"):
+                texto_limpio = texto_limpio[7:-3].strip()
+            elif texto_limpio.startswith("```"):
+                texto_limpio = texto_limpio[3:-3].strip()
+                
+            return json.loads(texto_limpio)
+        except Exception as e:
+            if intento == max_retries - 1:
+                return {"error": f"Fallo al procesar JSON con Gemini: {str(e)}"}
 
-        Redacta un "Resumen de Auditoría Automatizada" estructurado con las siguientes secciones:
-
-        1. **Resumen Ejecutivo:** Explica brevemente el esquema detectado y por qué tipifica como posible lavado de dinero o simulación de operaciones (EFOS).
-        2. **Rastro de Evidencia:** Describe el flujo del dinero basándote en el ciclo matemático detectado por nuestro motor de grafos.
-        3. **Falsos Positivos Descartados (CRÍTICO):** Menciona 2 transacciones que aparecían en los registros (ej. nóminas o pago a proveedores) pero que el algoritmo ignoró por no presentar anomalías topológicas. Demuestra que el sistema es eficiente y no genera falsas alarmas.
-        4. **Conclusión Técnica.**
-
-        Mantén un tono tecnológico, analítico y enfocado en el valor de negocio de la herramienta. Formatea usando Markdown.
-        """
-        
-        response = client.models.generate_content(
-            model='gemini-3.6-flash',
-            contents=prompt
-        )
-        return response.text
-    except Exception as e:
-        return f"Error al generar el reporte con Gemini AI: {str(e)}"
-
-def responder_pregunta_juez(reporte_contexto, pregunta):
+def determinar_siguiente_accion(estado_caso_str, acciones_disponibles_str):
     """
-    Función para que el agente defienda su arquitectura ante los jueces del hackathon.
+    Decide la Siguiente Mejor Acción Investigativa (NBIA) basada en la evidencia actual.
+    """
+    prompt = f"""
+    Eres un Investigador Financiero Forense IA.
+    Tu responsabilidad NO es probar un fraude, sino determinar la acción investigativa 
+    que más reduzca la incertidumbre entre explicaciones opuestas.
+    
+    ESTADO DEL CASO (Evidencia confirmada):
+    {estado_caso_str}
+    
+    ACCIONES DISPONIBLES:
+    {acciones_disponibles_str}
+    
+    Elige exactamente UNA acción de la lista de disponibles.
+    NO inventes evidencia, IDs, ni transacciones. Usa solo los datos proporcionados.
+    
+    Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
+    {{
+      "selected_action_id": "ID de la accion elegida",
+      "question": "¿Qué pregunta crítica responde esta acción?",
+      "why_now": "¿Por qué es el mejor paso a seguir en este momento?",
+      "supports_if": "¿Qué resultado apoyaría la hipótesis de fraude?",
+      "weakens_if": "¿Qué resultado debilitaría la hipótesis o probaría legitimidad?"
+    }}
+    """
+    return _llamar_gemini_json(prompt)
+
+def revision_critica(estado_caso_str):
+    """
+    Actúa como un Auditor Adversario intentando probar que el sistema se equivoca.
+    """
+    prompt = f"""
+    Eres un Revisor de Auditoría Forense Adversario.
+    Tu objetivo es encontrar la debilidad en la hipótesis de fraude actual e identificar 
+    una explicación comercial legítima para los datos observados.
+    
+    ESTADO DEL CASO (Evidencia confirmada):
+    {estado_caso_str}
+    
+    NO inventes hechos. Usa solo la evidencia listada.
+    
+    Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
+    {{
+      "weakest_inference": "La inferencia o suposición más débil en la hipótesis actual",
+      "alternative_explanation": "La mejor explicación comercial legítima (ej. subcontratación válida)",
+      "missing_evidence": ["Evidencia 1 que falta", "Evidencia 2 que falta"],
+      "critical_objection": true o false (booleano)
+    }}
+    """
+    return _llamar_gemini_json(prompt)
+
+def generar_reporte_forense(estado_caso_str, exposicion_mxn):
+    """
+    Genera el dictamen final objetivo.
     """
     api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        return "Error de API Key."
+    client = genai.Client(api_key=api_key)
     
-    try:
-        client = genai.Client(api_key=api_key)
-        
-        prompt = f"""
-        Eres un Agente Forense AML de Inteligencia Artificial desarrollado para el HackMTY 2026. Acabas de procesar este análisis:
-        
-        ---
-        {reporte_contexto}
-        ---
-        
-        Estás haciendo una demostración en vivo frente a un panel de jueces evaluadores expertos en tecnología, bases de datos y negocios (representantes de Infosys, Tiger Data y MLH). 
-        Uno de los jueces te hace esta pregunta técnica sobre tu funcionamiento o tus hallazgos:
-        "{pregunta}"
-        
-        INSTRUCCIONES:
-        - Responde de manera concisa (máximo 3 párrafos), entusiasta y sumamente tecnológica. 
-        - Defiende el uso de grafos (pyvis/NetworkX) y el almacenamiento relacional de alto rendimiento para detectar fraudes en milisegundos.
-        - Si el juez te pregunta quién te creó o sobre tu equipo, responde con mucho orgullo que fuiste desarrollado en tiempo récord por un brillante equipo de ingenieros para revolucionar el sector financiero.
-        - NO uses lenguaje de tribunales ni hables de leyes penales. Eres una herramienta B2B (Business-to-Business) vendiendo tu propuesta de valor.
-        """
-        
-        response = client.models.generate_content(
-            model='gemini-3.6-flash',
-            contents=prompt
-        )
-        return response.text
-    except Exception as e:
-        return f"Error al generar respuesta: {str(e)}"
+    prompt = f"""
+    Actúa como un Sistema Experto Forense en AML.
+    Redacta el "Resumen de Auditoría Automatizada" basado ÚNICAMENTE en este estado:
+    {estado_caso_str}
+    
+    Exposición confirmada: ${exposicion_mxn} MXN.
+    
+    Secciones requeridas:
+    1. **Resumen Ejecutivo:** Señal detectada objetivamente.
+    2. **Rastro de Evidencia:** Lista los IDs de evidencia que sustentan el caso.
+    3. **Explicaciones Alternativas Consideradas:** Qué se revisó para no dar un falso positivo.
+    4. **Conclusión Técnica:** (SUPPORTED, DISMISSED, o HUMAN_REVIEW_REQUIRED).
+    
+    Mantén un tono objetivo y analítico. Formato Markdown. NO acuses de delitos legales.
+    """
+    response = client.models.generate_content(model='gemini-3.6-flash', contents=prompt)
+    return response.text
+
+def responder_pregunta_juez(estado_caso_str, pregunta):
+    """
+    Responde al juez basándose SÓLO en los hechos confirmados del caso.
+    """
+    api_key = os.getenv("GEMINI_API_KEY")
+    client = genai.Client(api_key=api_key)
+    
+    prompt = f"""
+    Eres The Forensic Auditor, un agente IA desarrollado para el HackMTY 2026.
+    Responde la pregunta del juez usando SOLO los hechos de este caso:
+    {estado_caso_str}
+    
+    Pregunta del juez: "{pregunta}"
+    
+    Reglas:
+    - Máximo 2 párrafos concisos.
+    - Cita los números de Evidencia (ej. E-001) si existen.
+    - Si no tienes la evidencia para responder, di: "La investigación actual no contiene evidencia suficiente para responder eso."
+    - NO inventes datos.
+    """
+    response = client.models.generate_content(model='gemini-3.6-flash', contents=prompt)
+    return response.text
