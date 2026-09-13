@@ -13,19 +13,19 @@ def generar_reporte_forense(ciclo_detectado):
         client = genai.Client(api_key=api_key)
         
         prompt = f"""
-        Actúa como un Auditor Forense Senior experto en Prevención de Lavado de Dinero (AML).
-        A través de un análisis topológico de grafos, nuestro sistema ha detectado matemáticamente 
+        Actúa como un Sistema Experto Forense en Prevención de Lavado de Dinero (AML).
+        A través de un análisis topológico de grafos, nuestra arquitectura ha detectado matemáticamente 
         el siguiente esquema de transferencias circulares (round-tripping):
         {ciclo_detectado}
 
-        Redacta un "Dictamen Oficial de Auditoría" estructurado con las siguientes secciones:
+        Redacta un "Resumen de Auditoría Automatizada" estructurado con las siguientes secciones:
 
         1. **Resumen Ejecutivo:** Explica brevemente el esquema detectado y por qué tipifica como posible lavado de dinero o simulación de operaciones (EFOS).
-        2. **Rastro de Evidencia:** Describe el flujo del dinero basándote en el ciclo matemático detectado.
-        3. **Pistas Descartadas y Justificación (CRÍTICO):** Menciona 2 transacciones o proveedores ficticios que aparecían en los registros contables (ej. pagos de servicios, nóminas, licencias) pero que decidiste NO investigar ni acusar. Justifica firmemente que te rehusaste a seguirlas porque "su comportamiento financiero es congruente con su giro y no presentan anomalías topológicas". Debes demostrar que solo acusas con pruebas matemáticas sólidas.
-        4. **Conclusión.**
+        2. **Rastro de Evidencia:** Describe el flujo del dinero basándote en el ciclo matemático detectado por nuestro motor de grafos.
+        3. **Falsos Positivos Descartados (CRÍTICO):** Menciona 2 transacciones que aparecían en los registros (ej. nóminas o pago a proveedores) pero que el algoritmo ignoró por no presentar anomalías topológicas. Demuestra que el sistema es eficiente y no genera falsas alarmas.
+        4. **Conclusión Técnica.**
 
-        Mantén un tono altamente profesional, legal y objetivo. Formatea el texto usando Markdown.
+        Mantén un tono tecnológico, analítico y enfocado en el valor de negocio de la herramienta. Formatea usando Markdown.
         """
         
         response = client.models.generate_content(
@@ -38,7 +38,7 @@ def generar_reporte_forense(ciclo_detectado):
 
 def responder_pregunta_juez(reporte_contexto, pregunta):
     """
-    Función para que el agente defienda su dictamen ante el jurado.
+    Función para que el agente defienda su arquitectura ante los jueces del hackathon.
     """
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
@@ -48,17 +48,21 @@ def responder_pregunta_juez(reporte_contexto, pregunta):
         client = genai.Client(api_key=api_key)
         
         prompt = f"""
-        Eres el Auditor Forense Senior de IA que redactó este dictamen:
+        Eres un Agente Forense AML de Inteligencia Artificial desarrollado para el HackMTY 2026. Acabas de procesar este análisis:
         
         ---
         {reporte_contexto}
         ---
         
-        Un juez humano te está interrogando sobre tu hallazgo y te hace esta pregunta sorpresa:
+        Estás haciendo una demostración en vivo frente a un panel de jueces evaluadores expertos en tecnología, bases de datos y negocios (representantes de Infosys, Tiger Data y MLH). 
+        Uno de los jueces te hace esta pregunta técnica sobre tu funcionamiento o tus hallazgos:
         "{pregunta}"
         
-        Responde de manera concisa (máximo 3 párrafos), segura y sumamente profesional. 
-        Defiende tu razonamiento matemático y tus conclusiones basándote estrictamente en el dictamen que redactaste.
+        INSTRUCCIONES:
+        - Responde de manera concisa (máximo 3 párrafos), entusiasta y sumamente tecnológica. 
+        - Defiende el uso de grafos (pyvis/NetworkX) y el almacenamiento relacional de alto rendimiento para detectar fraudes en milisegundos.
+        - Si el juez te pregunta quién te creó o sobre tu equipo, responde con mucho orgullo que fuiste desarrollado en tiempo récord por un brillante equipo de ingenieros (César, Mauricio, Pablo, Javier, Ximena, Ana Lucía, Monse y tú) para revolucionar el sector financiero.
+        - NO uses lenguaje de tribunales ni hables de leyes penales. Eres una herramienta B2B (Business-to-Business) vendiendo tu propuesta de valor.
         """
         
         response = client.models.generate_content(
