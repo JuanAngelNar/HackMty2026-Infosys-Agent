@@ -6,6 +6,8 @@ import os
 import sys
 from dotenv import load_dotenv
 import networkx as nx
+import openai
+import anthropic
 
 def anonimizar_cuenta(cuenta):
     """
@@ -40,6 +42,69 @@ def detectar_esquema_circular(dataframe, col_origen='Origen', col_destino='Desti
         
         return ruta_str, fraude
     return None, None
+
+def investigador_claude(ciclo_detectado):
+    """Llama a Claude 3 Haiku para armar la acusación inicial."""
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key: 
+        return "⚠️ Error: No se encontró ANTHROPIC_API_KEY en el entorno."
+    
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        prompt = f"Actúa como un Investigador Forense implacable. Analiza este esquema matemático de transferencias detectado: {ciclo_detectado}. Redacta una acusación formal y contundente explicando por qué es un claro esquema de lavado de dinero (máximo 2 párrafos)."
+        
+        message = client.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=400,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return message.content[0].text
+    except Exception as e:
+        return f"Error en Claude: {str(e)}"
+
+def abogado_defensor_chatgpt(acusacion):
+    """Llama a gpt-4o-mini para refutar a Claude."""
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key: 
+        return "⚠️ Error: No se encontró OPENAI_API_KEY en el entorno."
+    
+    try:
+        client = openai.OpenAI(api_key=api_key)
+        prompt = f"El Investigador acusa este esquema: {acusacion}. Actúa como abogado defensor corporativo. Refuta su argumento y busca 2 justificaciones legales y lógicas de por qué este flujo de dinero es completamente normal (ej. pago de filiales). Sé conciso (máximo 2 párrafos)."
+        
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"Error en ChatGPT: {str(e)}"
+
+def juez_supremo_gemini(acusacion, defensa):
+    """Llama a Gemini Flash para dar el veredicto final."""
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return "Error de API Key."
+    
+    try:
+        from google import genai
+        client = genai.Client(api_key=api_key)
+        
+        prompt = f"""
+        Investigador (Claude): {acusacion}
+        
+        Defensor (ChatGPT): {defensa}
+        
+        Actúa como el Juez Supremo de Auditoría. Evalúa objetivamente ambos argumentos y da un veredicto final, imparcial y definitivo. ¿Es fraude o un falso positivo justificable? (Máximo 2 párrafos).
+        """
+        
+        response = client.models.generate_content(
+            model='gemini-3.6-flash',
+            contents=prompt
+        )
+        return response.text
+    except Exception as e:
+        return f"Error al generar respuesta del Juez: {str(e)}"
 
 # Forzar la carga del .env desde la raíz
 load_dotenv(override=True)
@@ -247,6 +312,28 @@ if uploaded_file is not None:
                     file_name="expediente_forense.pdf",
                     mime="application/pdf"
                 )
+
+                st.markdown("---")
+                st.markdown("### ⚖️ Tribunal de IAs (Debate Multi-Agente)")
+                st.caption("Orquestación Multi-LLM en vivo: Claude vs ChatGPT vs Gemini")
+                
+                if st.button("Convocar Tribunal de Auditoría", icon="🏛️"):
+                    with st.spinner("Investigador Claude (3-Haiku) armando el caso..."):
+                        acusacion_claude = investigador_claude(ciclo_detectado)
+                        
+                    with st.spinner("Abogado ChatGPT (gpt-4o-mini) preparando la defensa..."):
+                        defensa_gpt = abogado_defensor_chatgpt(acusacion_claude)
+                        
+                    with st.spinner("Juez Gemini evaluando el veredicto final..."):
+                        veredicto_gemini = juez_supremo_gemini(acusacion_claude, defensa_gpt)
+                        
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.info(f"🔵 **Investigador (Claude 3):**\n\n{acusacion_claude}")
+                    with col2:
+                        st.warning(f"🔴 **Defensor Corporativo (ChatGPT):**\n\n{defensa_gpt}")
+                        
+                    st.success(f"🟢 **Juez Supremo (Gemini Flash):**\n\n{veredicto_gemini}")
         else:
             st.success("✅ Auditoría completada: No se detectaron esquemas de lavado de dinero circular en esta base de datos.")
 
