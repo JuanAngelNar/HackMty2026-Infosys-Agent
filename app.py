@@ -118,6 +118,9 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### 🔒 Cumplimiento")
     st.checkbox("Enmascaramiento PII Activo", value=True, disabled=True)
+    
+    st.caption("Simulador de base de datos SAT (Demo):")
+    id_sospechoso = st.text_input("Agregar ID a Lista 69-B:", placeholder="Ej. ID-A1B2C3D4")
 st.markdown("Plataforma de detección de lavado de dinero y empresas fantasma (EFOS) impulsada por Gemini AI.")
 
 st.sidebar.header("Panel de Control")
@@ -156,20 +159,30 @@ if uploaded_file is not None:
     with st.expander("Ver vista previa de los datos brutos (Anonimizados)"):
         st.dataframe(df.head())
 
-    st.markdown("### 🏛️ Verificación Gubernamental (Artículo 69-B)")
+    st.markdown("### 🏛️ Verificación Gubernamental y Métricas")
         
-    # Extraemos todas las cuentas únicas que participan en el CSV
+        # Extraemos cuentas únicas
     nodos_totales = set(df[col_origen]).union(set(df[col_destino]))
         
-    # Simulamos la lista negra del gobierno (puedes agregar los IDs que salgan en tus pruebas)
-    lista_negra_sat = {"ID-F5CA38F7", "ID-9400F1B2", "ID-5F9C4AB0", "ID-LAVADO-99"} 
-        
+        # Simulamos la lista negra y agregamos el ID del juez
+    lista_negra_sat = {"ID-F5CA38F7", "ID-9400F1B2"} 
+    if id_sospechoso:
+        lista_negra_sat.add(id_sospechoso.strip())
+            
     coincidencias_sat = nodos_totales.intersection(lista_negra_sat)
         
+        # Mostramos tarjetas de estilo financiero (st.columns)
+    col1, col2, col3 = st.columns(3)
+    col1.metric(label="Transacciones Procesadas", value=f"{len(df)} txs")
+    col2.metric(label="Entidades Únicas", value=f"{len(nodos_totales)}")
+    col3.metric(label="Riesgo SAT (69-B)", value="ALTO" if coincidencias_sat else "BAJO", delta="- Fraude Detectado" if coincidencias_sat else "Limpio", delta_color="inverse")
+        
     if coincidencias_sat:
-        st.error(f"🚨 **¡ALERTA CRÍTICA SAT 69-B!** Se detectaron entidades boletinadas como Empresas que Facturan Operaciones Simuladas (EFOS): {', '.join(coincidencias_sat)}")
+        st.error(f"🚨 **¡ALERTA CRÍTICA SAT 69-B!** Entidades boletinadas detectadas (EFOS): {', '.join(coincidencias_sat)}")
     else:
-        st.success("✅ Verificación completada: Ninguna entidad se encuentra boletinada por el SAT.")
+        st.success("✅ Verificación completada: Ninguna entidad en este lote está boletinada por el SAT.")
+            
+    st.markdown("---")
         
     if st.button("Ejecutar Auditoría Forense", type="primary"):
         with st.spinner("Analizando la topología de la red financiera con NetworkX..."):
