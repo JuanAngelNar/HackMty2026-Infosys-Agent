@@ -92,7 +92,7 @@ def generar_reporte_forense(estado_caso_str, exposicion_mxn):
     
     Mantén un tono objetivo y analítico. Formato Markdown. NO acuses de delitos legales.
     """
-    response = client.models.generate_content(model='gemini-1.5-flash', contents=prompt)
+    response = client.models.generate_content(model='gemini-3.6-flash', contents=prompt)
     return response.text
 
 def responder_pregunta_juez(estado_caso_str, pregunta):
