@@ -156,10 +156,23 @@ if uploaded_file is not None:
     with st.expander("Ver vista previa de los datos brutos (Anonimizados)"):
         st.dataframe(df.head())
 
-    
+    st.markdown("### 🏛️ Verificación Gubernamental (Artículo 69-B)")
+        
+    # Extraemos todas las cuentas únicas que participan en el CSV
+    nodos_totales = set(df[col_origen]).union(set(df[col_destino]))
+        
+    # Simulamos la lista negra del gobierno (puedes agregar los IDs que salgan en tus pruebas)
+    lista_negra_sat = {"ID-F5CA38F7", "ID-9400F1B2", "ID-5F9C4AB0", "ID-LAVADO-99"} 
+        
+    coincidencias_sat = nodos_totales.intersection(lista_negra_sat)
+        
+    if coincidencias_sat:
+        st.error(f"🚨 **¡ALERTA CRÍTICA SAT 69-B!** Se detectaron entidades boletinadas como Empresas que Facturan Operaciones Simuladas (EFOS): {', '.join(coincidencias_sat)}")
+    else:
+        st.success("✅ Verificación completada: Ninguna entidad se encuentra boletinada por el SAT.")
+        
     if st.button("Ejecutar Auditoría Forense", type="primary"):
         with st.spinner("Analizando la topología de la red financiera con NetworkX..."):
-            # OJO: Cambia 'Origen' y 'Destino' por los nombres reales de las columnas en tu tx.csv
             ciclo_detectado, lista_nodos = detectar_esquema_circular(df, col_origen=col_origen, col_destino=col_destino)
             
         if ciclo_detectado:
@@ -177,7 +190,7 @@ if uploaded_file is not None:
                 html_source = f.read()
             components.html(html_source, height=415)
             
-            # --- GENERACIÓN DE REPORTE CON IA ---
+            # GENERACIÓN DE REPORTE CON IA
             with st.spinner("Generando Expediente de Caso con Gemini AI..."):
                 reporte = generar_reporte_forense(ciclo_detectado)
                 st.session_state['reporte_generado'] = reporte
@@ -208,7 +221,7 @@ if uploaded_file is not None:
                     except Exception as voice_error:
                         st.warning(f"No se pudo generar el audio: {voice_error}")
 
-                # --- GENERACIÓN DE PDF Y DESCARGA ---
+                # GENERACIÓN DE PDF Y DESCARGA
                 from reports.pdf_generator import generar_pdf_caso
                 pdf_path = generar_pdf_caso(reporte)
                 
