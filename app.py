@@ -345,11 +345,17 @@ if uploaded_file is not None:
             acciones_ejecutadas = [a["action_id"] for a in case["action_history"]]
             acciones_disponibles = {k: v for k, v in CATALOGO_ACCIONES.items() if k not in acciones_ejecutadas}
             
-            # Consultar al LLM Investigator solo para elegir y justificar
-            res_nbia = determinar_siguiente_accion(
-                json.dumps(case["evidence_ledger"]),
-                json.dumps(acciones_disponibles)
-            )
+            # 🔥 OPTIMIZACIÓN: Solo llamar a OpenAI si avanzamos de paso (Caché de memoria)
+            paso_actual = len(acciones_ejecutadas)
+            if "memoria_nbia" not in st.session_state or st.session_state.get("paso_nbia") != paso_actual:
+                with st.spinner("🧠 OpenAI está evaluando la evidencia para decidir el siguiente paso..."):
+                    st.session_state.memoria_nbia = determinar_siguiente_accion(
+                        json.dumps(case["evidence_ledger"]),
+                        json.dumps(acciones_disponibles)
+                    )
+                    st.session_state.paso_nbia = paso_actual
+                    
+            res_nbia = st.session_state.memoria_nbia
             
             sel_id = res_nbia.get("selected_action_id", "A-001")
             if sel_id not in acciones_disponibles:
@@ -380,14 +386,13 @@ if uploaded_file is not None:
                         case["hypotheses"][0]["contradicting_evidence"].append(ev_id)
                         
                 elif sel_id == "A-002":
-                    # Reconciliación de montos
                     monto = float(df[col_monto].sum()) if col_monto in df.columns else 580000.0
                     case["supported_exposure_mxn"] = monto
                     ev_id = agregar_evidencia(case, "RECONCILIATION_MATCH", f"Reconciliación de pagos confirmada por ${monto:,.2f} MXN", uploaded_file.name, "LEDGER_RECONCILIATION", monto)
                     case["hypotheses"][0]["supporting_evidence"].append(ev_id)
                     
                 elif sel_id == "A-003":
-                    ev_id = agregar_evidencia(case, "MONEY_TRAIL_CONFIRMED", f"Trazabilidad confirmada: Retorno de fondos en circuito cerrado detectado.", uploaded_file.name, "TRACE_GRAPH")
+                    ev_id = agregar_evidencia(case, "MONEY_TRAIL_CONFIRMED", f"Trazabilidad confirmada en esquema transaccional.", uploaded_file.name, "TRACE_GRAPH")
                     case["hypotheses"][0]["supporting_evidence"].append(ev_id)
                     
                 elif sel_id == "A-004":
@@ -405,18 +410,17 @@ if uploaded_file is not None:
                     case["status"] = "CONCLUDED"
                     st.rerun()
                 
-                # Registrar acción en historial
                 case["action_history"].append({
                     "action_id": sel_id,
                     "nombre": info_accion["nombre"],
                     "rationale": res_nbia.get("why_now", "")
                 })
                 
-                # Revisión crítica adversaria tras nueva evidencia
-                res_critica = revision_critica(json.dumps(case["evidence_ledger"]))
-                case["critical_review"] = res_critica
+                # 🔥 OPTIMIZACIÓN: Añadimos un spinner visual para el Crítico
+                with st.spinner("🕵️‍♂️ El Crítico Adversario está buscando justificaciones legítimas..."):
+                    res_critica = revision_critica(json.dumps(case["evidence_ledger"]))
+                    case["critical_review"] = res_critica
                 
-                # Auto-adjudicar si se alcanzaron acciones clave
                 if len(case["action_history"]) >= 4:
                     adjudicar_caso(case)
                     case["status"] = "CONCLUDED"
