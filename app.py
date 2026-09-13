@@ -229,7 +229,7 @@ if uploaded_file is not None:
                                 model_id="eleven_multilingual_v2"
                             )
                             audio_bytes = b"".join(audio)
-                            st.audio(audio_bytes, format="audio/mp3")
+                            st.audio(audio_bytes, format="audio/mp3", autoplay = True)
                             st.success("🎙️ Reporte de voz generado con éxito.")
                     except Exception as voice_error:
                         st.warning(f"No se pudo generar el audio: {voice_error}")
